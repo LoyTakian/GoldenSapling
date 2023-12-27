@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DB_PATH = os.getenv('DB_PATH')
-allowed_table_names = ['mantlejumpmap', 'firstmap', 'gymmap', 'doorbouncemap']
 
+allowed_table_names = ['mantlejumpmap', 'firstmap', 'gymmap', 'doorbouncemap']
 
 def insert_into_db(player_name, time_score, table_name):
     if table_name not in allowed_table_names:
@@ -39,11 +39,11 @@ def read_leaderboard(table_name):
     cur = con.cursor()
 
     query = f'''
-        SELECT player_name, MIN(time_score) as min_time_score
+        SELECT player_name, MIN(time_score) AS time_score
         FROM {table_name}
         GROUP BY player_name
-        ORDER BY min_time_score
-        LIMIT 10
+        ORDER BY time_score ASC, MAX(ID) DESC
+        LIMIT 10;
     '''
 
     try:
