@@ -101,3 +101,66 @@ def table_constructor(leaderboard):
     table += "```"
 
     return table
+
+
+def insert_into_db(player, time, table_name):
+    if table_name not in allowed_table_names:
+        return
+    
+    query = f'INSERT INTO {table_name} (player_name, time_score) VALUES (?, ?)'
+
+    try:
+        con = sqlite3.connect(DB_PATH)
+
+        with con:
+            cur = con.cursor()
+            cur.execute(query, (player, time))
+    
+    except sqlite3.Error as e:
+        print(f"Error executing insert_into_db query: {e}")
+        return
+
+
+def delete_from_db(player, table_name, time=0):
+    if table_name not in allowed_table_names:
+        return
+    
+    query = f'DELETE FROM {table_name} WHERE player_name = ?'
+    params = [player]
+
+    if time > 0:
+        query += ' AND time_score = ?'
+        params.append(time)
+
+    try:
+        con = sqlite3.connect(DB_PATH)
+        
+        with con:
+            cur = con.cursor()
+            cur.execute(query, params)
+    
+    except sqlite3.Error as e:
+        print(f"Error executing delete_from_db query: {e}")
+        return
+
+
+def change_nickname_in_db(old_name, new_name, table_name):
+    if table_name not in allowed_table_names:
+        return
+
+    query = f'''
+        UPDATE {table_name}
+        SET player_name = ?
+        WHERE player_name = ?
+    '''
+
+    try:
+        con = sqlite3.connect(DB_PATH)
+
+        with con:
+            cur = con.cursor()
+            cur.execute(query, (new_name, old_name))
+
+    except sqlite3.Error as e:
+        print(f"Error executing change_nickname_in_db query: {e}")
+        return
