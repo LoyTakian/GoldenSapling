@@ -103,24 +103,6 @@ def table_constructor(leaderboard):
     return table
 
 
-def insert_into_db(player, time, table_name):
-    if table_name not in allowed_table_names:
-        return
-    
-    query = f'INSERT INTO {table_name} (player_name, time_score) VALUES (?, ?)'
-
-    try:
-        con = sqlite3.connect(DB_PATH)
-
-        with con:
-            cur = con.cursor()
-            cur.execute(query, (player, time))
-    
-    except sqlite3.Error as e:
-        print(f"Error executing insert_into_db query: {e}")
-        return
-
-
 def delete_from_db(player, table_name, time=0):
     if table_name not in allowed_table_names:
         return
