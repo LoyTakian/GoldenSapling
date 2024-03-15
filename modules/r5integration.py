@@ -18,6 +18,9 @@ def read_and_process_txt_file(file_path):
 
             if table_name in allowed_table_names:
                 insert_into_db(player_name, time_score, table_name)
+
+                return(player_name, time_score, table_name)
+
             else:
                 print("Error executing read_and_process_txt_file...")
 
