@@ -1,8 +1,22 @@
 {
-    "players": "0",
+    "players": "5",
     "new_runs": {
-        "First Map": [],
-        "Gym Map": [],
+        "First Map": [
+            {
+                "player_name": "NewName",
+                "time_score": "123"
+            },
+            {
+                "player_name": "Name",
+                "time_score": "1"
+            }
+        ],
+        "Gym Map": [
+            {
+                "player_name": "NewName",
+                "time_score": "123"
+            }
+        ],
         "Mantle Jump Map": []
     }
 }

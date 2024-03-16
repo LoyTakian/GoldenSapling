@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
-from dbIntegration import insert_into_db, allowed_table_names, timer_converter
-
+from modules.dbIntegration import insert_into_db, allowed_table_names, timer_converter
 
 load_dotenv()
 TOP3_FOLDER_PATH = os.getenv("TOP3_FOLDER_PATH")

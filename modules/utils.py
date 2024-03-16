@@ -5,7 +5,7 @@ import json
 
 class RoleSelectView(View):
     def __init__(self, roleClass):
-        super().__init__()
+        super().__init__(timeout=None)
         self.add_item(roleClass())
 
 
@@ -29,6 +29,7 @@ class RoleSelectPlatform(Select):
             min_values=1,
             max_values=4,
             options=options,
+            custom_id="platform_role"
         )
 
     async def callback(self, interaction: Interaction):
@@ -70,6 +71,7 @@ class RoleSelectContent(Select):
             min_values=1,
             max_values=2,
             options=options,
+            custom_id="content_role"
         )
 
     async def callback(self, interaction: Interaction):
@@ -111,6 +113,7 @@ class RoleSelectExtra(Select):
             min_values=1,
             max_values=2,
             options=options,
+            custom_id="extra_role"
         )
 
     async def callback(self, interaction: Interaction):
