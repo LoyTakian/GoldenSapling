@@ -1,6 +1,6 @@
+from dotenv import load_dotenv
 import sqlite3
 import os
-from dotenv import load_dotenv
 
 load_dotenv()
 DB_PATH = os.getenv("DB_PATH")
@@ -31,7 +31,7 @@ def insert_into_db(player_name, time_score, table_name):
         )
         con.commit()
         con.close()
-    except:
+    except: # noqa: E722
         print("Error executing insert_into_db query...")
 
 
@@ -59,8 +59,8 @@ def read_leaderboard(table_name):
         cur.execute(query)
         results = cur.fetchall()
         con.close()
-    except:
-        print("Error executing read_leaderboard query...")
+    except Exception as e:
+        print(f"Error executing read_leaderboard query. Error: {e}")
         return []
 
     return results
@@ -85,8 +85,8 @@ def read_personal_best(player_name, table_name):
         cur.execute(query, (player_name,))
         results = cur.fetchall()
         con.close()
-    except:
-        print("Error executing read_personal_best query...")
+    except Exception as e:
+        print(f"Error executing read_personal_best query. Error: {e}")
         return []
 
     return results
@@ -120,7 +120,7 @@ def table_constructor(leaderboard):
     return table
 
 
-def delete_from_db(player, table_name, time=0):
+def delete_from_db(player, time, table_name):
     if table_name not in allowed_table_names:
         return
 

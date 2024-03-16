@@ -18,6 +18,9 @@ def read_and_process_txt_file(file_path):
 
             if table_name in allowed_table_names:
                 insert_into_db(player_name, time_score, table_name)
+
+                return (player_name, time_score, table_name)
+
             else:
                 print("Error executing read_and_process_txt_file...")
 
@@ -44,16 +47,16 @@ def update_top10_file(entries):
     top_10 = list(set(top_10))
 
     with open(f"{TOP3_FOLDER_PATH}/_mh_leaderboards.nut", "w") as file:
-        file.write(f"untyped\n\n")
+        file.write("untyped\n\n")
 
-        file.write(f"globalize_all_functions\n\n")
+        file.write("globalize_all_functions\n\n")
 
         file.write(
             f'global const array <string> top3_players = ["{GM1Name}","{GM2Name}","{GM3Name}","{MJM1Name}","{MJM2Name}","{MJM3Name}","{FM1Name}","{FM2Name}","{FM3Name}"]\n'
         )
-        file.write(f"global const array <string> top10_players = [")
-        file.write(f", ".join(f'"{player}"' for player in top_10))
-        file.write(f"]\n\n")
+        file.write("global const array <string> top10_players = [")
+        file.write(", ".join(f'"{player}"' for player in top_10))
+        file.write("]\n\n")
 
         file.write("void function MH_Spawn_Leadeboards(entity player) {\n")
         file.write(

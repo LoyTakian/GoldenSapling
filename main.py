@@ -1,287 +1,360 @@
+from modules import utils, dbIntegration
+from discord.ext import commands, tasks
+from dotenv import load_dotenv
+from datetime import datetime
+import discord
+import json
 import os
 import re
-import discord
-import datetime
-from discord.ext import tasks
-from dotenv import load_dotenv
-from modules.dbIntegration import (
-    read_leaderboard,
-    read_personal_best,
-    table_constructor,
-)
-
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-LEADERBOARD_MESSAGE_ID = int(os.getenv("LEADERBOARD_MESSAGE_ID"))
+ROLES_CHANNEL_ID = int(os.getenv("ROLES_CHANNEL_ID"))
+MODERATOR_ROLES_ID = {int(id) for id in os.getenv("MODERATOR_ROLES_ID").split(",")}
 LEADERBOARD_CHANNEL_ID = int(os.getenv("LEADERBOARD_CHANNEL_ID"))
+PLAYERS_ONLINE_CHANNEL_ID = int(os.getenv("PLAYERS_ONLINE_CHANNEL_ID"))
+LEADERBOARD_MESSAGE_ID = int(os.getenv("LEADERBOARD_MESSAGE_ID"))
 LEADERBOARD_FIRSTMAP_ID = int(os.getenv("LEADERBOARD_FIRSTMAP_ID"))
 LEADERBOARD_GYMMAP_ID = int(os.getenv("LEADERBOARD_GYMMAP_ID"))
 LEADERBOARD_MANTLEJUMPMAP_ID = int(os.getenv("LEADERBOARD_MANTLEJUMPMAP_ID"))
+NEW_RUNS_CHANNEL_ID = int(os.getenv("NEW_RUNS_CHANNEL_ID"))
+MAP_NAMES = ["Mantle Jump Map", "Doorbounce Map", "First Map", "Gym Map"]
 TWITTER_PATTERN = r"https://twitter\.com/(\S+)"
 X_PATTERN = r"https://x\.com/(\S+)"
-MODERATOR_ROLES_ID = {839992880314974209, 839992880314974208, 839992880302653458}
 
 intents = discord.Intents.default()
-intents.messages = True
 intents.message_content = True
+bot = commands.Bot(command_prefix=">", intents=intents)
 
 
-class aclient(discord.Client):
-    def __init__(self):
-        super().__init__(intents=intents)
-        self.synced = False
+@bot.slash_command(
+    guid_ids=[839992880293478400],
+    description="Returns information about the functionalities of this bot.",
+)
+async def help(ctx):
+    await ctx.response.send_message(utils.help_message)
+    return
 
-    async def on_ready(self):
-        await self.wait_until_ready()
-        if not self.synced:
-            await tree.sync()
-            self.synced = True
-        print(f"Bot {self.user} is ready.")
-        self.update_leaderboard.start()
 
-    async def on_message(self, message):
-        if message.author == client.user:
+@bot.slash_command(
+    guid_ids=[839992880293478400],
+    description="Returns the top 10 fastest players for a specific movement map.",
+)
+async def leaderboard(ctx):
+    channel_name = ctx.channel.name
+    leaderboard = []
+
+    if channel_name in MAP_NAMES:
+        leaderboard = dbIntegration.read_leaderboard(
+            ("".join(channel_name.lower().split()))
+        )
+
+    if len(leaderboard) <= 0:
+        await ctx.response.send_message(
+            f"**{channel_name}** doesn't have a leaderboard or it is empty."
+        )
+        return
+
+    else:
+        answer = f"**{channel_name.upper()} LEADERBOARD**\n"
+        answer += dbIntegration.table_constructor(leaderboard)
+
+        await ctx.response.send_message(answer)
+    return
+
+
+@bot.slash_command(
+    guid_ids=[839992880293478400],
+    description="Returns 10 fastest runs of a specific player for a specific movement map.",
+)
+async def personal_best(ctx, player_name: str):
+    channel_name = ctx.channel.name
+    leaderboard = []
+
+    if len(player_name) <= 0:
+        await ctx.response.send_message("**Player nickname** cannot be empty.")
+        return
+
+    elif channel_name not in MAP_NAMES:
+        await ctx.response.send_message(
+            f"**{channel_name}** doesn't have a leaderboard or it is empty."
+        )
+        return
+
+    else:
+        leaderboard = dbIntegration.read_personal_best(
+            player_name, "".join(channel_name.lower().split())
+        )
+
+        if len(leaderboard) <= 0:
+            await ctx.response.send_message(
+                f"**{player_name}** doesn't have any submission on **{channel_name}**."
+            )
             return
 
-        if "@everyone" in message.content or "@here" in message.content:
-            author_roles = {role.id for role in message.author.roles}
-            if MODERATOR_ROLES_ID.intersection(author_roles):
-                return
-            else:
-                try:
-                    await message.guild.ban(
-                        message.author,
-                        reason="Sent @ everyone, Probably a hacked account.",
-                        delete_message_days=7,
-                    )
+        else:
+            answer = f"**{channel_name.upper()} LEADERBOARD**\n"
+            answer += utils.table_constructor(leaderboard)
 
-                    now = datetime.datetime.now()
-                    print(
-                        f"{message.author} was banned for using @everyone on {now.strftime('%Y-%m-%d %H:%M:%S')}."
-                    )
-                except discord.Forbidden:
-                    print("I do not have permission to ban.")
-                except discord.HTTPException:
-                    print("Banning failed.")
+            await ctx.response.send_message(answer)
+            return
 
-        # Regular expression pattern to match Twitter links
-        twitter_pattern = TWITTER_PATTERN
-        x_pattern = X_PATTERN
 
-        # Check if the message contains a Twitter link
-        match = re.search(twitter_pattern, message.content)
-        match2 = re.search(x_pattern, message.content)
+@bot.command(name="add")
+async def add_to_db(
+    ctx,
+    player_name: str = "empty",
+    time_score: str = "empty",
+    table_name: str = "empty",
+):
+    if any(x == "empty" for x in [player_name, time_score, table_name]):
+        await ctx.reply("usage: >add `player_name` time_score table_name")
+        return
 
-        if match or match2:
-            # Extract the Twitter username
-            url_content = match2.group(1) if match2 else match.group(1)
+    elif ctx.message.author.id != 192774874077331465:
+        await ctx.reply("Nice try, jackass! Only Loy can use this command.")
+        return
 
-            # Modify the URL by adding "vx" before "twitter"
-            modified_url = f"{message.author.mention}, here's a better version of the link: https://vxtwitter.com/{url_content}"
+    elif not player_name[0] == "`" or not player_name[-1] == "`":
+        await ctx.reply("player_name format, make sure to envelop the variable in `.")
+        return
 
-            # Send the modified URL
-            await message.channel.send(modified_url)
+    elif not re.fullmatch(r"^\d+:\d{2}$", time_score):
+        await ctx.reply("Wrong time format, the correct format is: `min:sec`.")
+        return
 
-    @tasks.loop(seconds=60)
-    async def update_leaderboard(self):
-        channel = self.get_channel(LEADERBOARD_CHANNEL_ID)
-        mjm = read_leaderboard("mantlejumpmap")
-        fm = read_leaderboard("firstmap")
-        gm = read_leaderboard("gymmap")
-
-        mjm = (
-            table_constructor(mjm)
-            or "```ansi\n[2;41m[2;30m[0m[2;41m[0m[2;41m[2;30m[2;37m[1;37m[4;37mNO SUBMISSIONS[0m[1;37m[1;41m[0m[2;37m[2;41m[0m[2;30m[2;41m[0m[2;41m[0m```"
-        )
-        fm = (
-            table_constructor(fm)
-            or "```ansi\n[2;41m[2;30m[0m[2;41m[0m[2;41m[2;30m[2;37m[1;37m[4;37mNO SUBMISSIONS[0m[1;37m[1;41m[0m[2;37m[2;41m[0m[2;30m[2;41m[0m[2;41m[0m```"
-        )
-        gm = (
-            table_constructor(gm)
-            or "```ansi\n[2;41m[2;30m[0m[2;41m[0m[2;41m[2;30m[2;37m[1;37m[4;37mNO SUBMISSIONS[0m[1;37m[1;41m[0m[2;37m[2;41m[0m[2;30m[2;41m[0m[2;41m[0m```"
+    elif table_name not in [
+        "".join(map_name.lower().split()) for map_name in MAP_NAMES
+    ]:
+        await ctx.reply(
+            "Wrong table name. Tables available: mantlejumpmap, firstmap, gymmap, doorbouncemap"
         )
 
-        try:
-            leaderboard_message = await channel.fetch_message(LEADERBOARD_MESSAGE_ID)
-            answer = f"""# LEADERBOARDS
-:white_check_mark:  Check your times by sending ``/personal_best`` on the map posts.
-:warning: The bot can take up to 1 minute to update with new info, be patient!"""
+    else:
+        player_name = player_name[1:-1]
+        seconds = utils.time_to_seconds(time_score)
+        dbIntegration.insert_into_db(player_name, seconds, table_name)
 
-            if answer != leaderboard_message.content:
-                await leaderboard_message.edit(content=answer)
+        await ctx.reply(f"New entry: `{player_name}` ({seconds}) - {table_name}")
+        return
 
-        except discord.NotFound:
-            print("Leaderboard message not found or unable to access")
 
-        try:
-            leaderboard_firstmap_message = await channel.fetch_message(
-                LEADERBOARD_FIRSTMAP_ID
-            )
-            answer = f"""### First Map
+@bot.command(name="remove")
+async def remove_from_db(
+    ctx,
+    player_name: str = "empty",
+    time_score: str = "empty",
+    table_name: str = "empty",
+):
+    if any(x == "empty" for x in [player_name, time_score, table_name]):
+        await ctx.reply("usage: >remove `player_name` time_score table_name")
+        return
+
+    elif ctx.message.author.id != 192774874077331465:
+        await ctx.reply("Nice try, jackass! Only Loy can use this command.")
+        return
+
+    elif not player_name[0] == "`" or not player_name[-1] == "`":
+        await ctx.reply("player_name format, make sure to envelop the variable in `.")
+        return
+
+    elif not re.fullmatch(r"^\d+:\d{2}$", time_score):
+        await ctx.reply("Wrong time format, the correct format is: `min:sec`.")
+        return
+
+    elif table_name not in [
+        "".join(map_name.lower().split()) for map_name in MAP_NAMES
+    ]:
+        await ctx.reply(
+            "Wrong table name. Tables available: mantlejumpmap, firstmap, gymmap, doorbouncemap"
+        )
+        return
+
+    else:
+        player_name = player_name[1:-1]
+        seconds = utils.time_to_seconds(time_score)
+        dbIntegration.delete_from_db(player_name, seconds, table_name)
+
+        await ctx.reply(f"Deleted: `{player_name}` ({seconds}) - {table_name}")
+        return
+
+
+@bot.event
+async def on_guild_available(guild):
+    channel = bot.get_channel(ROLES_CHANNEL_ID)
+
+    if channel is not None:
+        await channel.purge()
+        await channel.send(
+            "Select the platforms you play on:",
+            view=utils.RoleSelectView(utils.RoleSelectPlatform),
+        )
+        await channel.send(
+            "Select the type of content to get notified about:",
+            view=utils.RoleSelectView(utils.RoleSelectContent),
+        )
+        await channel.send(
+            "Select extra roles:", view=utils.RoleSelectView(utils.RoleSelectExtra)
+        )
+
+
+@tasks.loop(seconds=60)
+async def update_leaderboard(self):
+    channel = self.get_channel(LEADERBOARD_CHANNEL_ID)
+    mjm = dbIntegration.read_leaderboard("mantlejumpmap")
+    fm = dbIntegration.read_leaderboard("firstmap")
+    gm = dbIntegration.read_leaderboard("gymmap")
+    empty = "```ansi\n[2;41m[2;30m[0m[2;41m[0m[2;41m[2;30m[2;37m[1;37m[4;37mNO SUBMISSIONS[0m[1;37m[1;41m[0m[2;37m[2;41m[0m[2;30m[2;41m[0m[2;41m[0m```"
+
+    mjm = utils.table_constructor(mjm) or empty
+    fm = utils.table_constructor(fm) or empty
+    gm = utils.table_constructor(gm) or empty
+
+    # Updates the info about the leaderboards (1st message)
+    try:
+        leaderboard_message = await channel.fetch_message(LEADERBOARD_MESSAGE_ID)
+        answer = utils.leaderboard_message
+
+        if answer != leaderboard_message.content:
+            await leaderboard_message.edit(content=answer)
+
+    except discord.NotFound:
+        print("Leaderboard message not found or unable to access.")
+
+    # Updates the First Map leaderboard (2nd message)
+    try:
+        leaderboard_message = await channel.fetch_message(LEADERBOARD_FIRSTMAP_ID)
+        answer = f"""### First Map
 {fm}
 post: https://discord.com/channels/839992880293478400/1100536422450073690"""
 
-            if len(answer) >= 1800:
-                print(f"fm length: {len(answer)}")
+        if answer != leaderboard_message.content:
+            await leaderboard_message.edit(content=answer)
 
-            if answer != leaderboard_firstmap_message.content:
-                await leaderboard_firstmap_message.edit(content=answer)
+    except discord.NotFound:
+        print("First Map Leaderboard message not found or unable to access.")
 
-        except discord.NotFound:
-            print("Leaderboard message not found or unable to access")
-
-        try:
-            leaderboard_gymmap_message = await channel.fetch_message(
-                LEADERBOARD_GYMMAP_ID
-            )
-            answer = f"""### Gym Map
+    # Updates the Gym Map leaderboard (3rd message)
+    try:
+        leaderboard_gymmap_message = await channel.fetch_message(LEADERBOARD_GYMMAP_ID)
+        answer = f"""### Gym Map
 {gm}
 post: https://discord.com/channels/839992880293478400/1180733536676880396"""
 
-            if len(answer) >= 1800:
-                print(f"gm length: {len(answer)}")
+        if answer != leaderboard_gymmap_message.content:
+            await leaderboard_gymmap_message.edit(content=answer)
 
-            if answer != leaderboard_gymmap_message.content:
-                await leaderboard_gymmap_message.edit(content=answer)
+    except discord.NotFound:
+        print("Gym Map Leaderboard message not found or unable to access")
 
-        except discord.NotFound:
-            print("Leaderboard message not found or unable to access")
-
-        try:
-            leaderboard_mantlejumpmap_message = await channel.fetch_message(
-                LEADERBOARD_MANTLEJUMPMAP_ID
-            )
-            answer = f"""### Mantle Jump Map
+    # Updates the Mantle Jump Map leaderboard (4th message)
+    try:
+        leaderboard_mantlejumpmap_message = await channel.fetch_message(
+            LEADERBOARD_MANTLEJUMPMAP_ID
+        )
+        answer = f"""### Mantle Jump Map
 {mjm}
 post: https://discord.com/channels/839992880293478400/1123705203015827597"""
 
-            if len(answer) >= 1800:
-                print(f"mjm length: {len(answer)}")
+        if answer != leaderboard_mantlejumpmap_message.content:
+            await leaderboard_mantlejumpmap_message.edit(content=answer)
 
-            if answer != leaderboard_mantlejumpmap_message.content:
-                await leaderboard_mantlejumpmap_message.edit(content=answer)
-
-        except discord.NotFound:
-            print("Leaderboard message not found or unable to access")
+    except discord.NotFound:
+        print("Mantle Jump Map Leaderboard message not found or unable to access")
 
 
-client = aclient()
-tree = discord.app_commands.CommandTree(client)
+@tasks.loop(seconds=300)
+async def update_online_players(self):
+    channel = self.get_channel(PLAYERS_ONLINE_CHANNEL_ID)
 
+    if channel is None:
+        print("Channel **Players Online** not found.")
 
-@tree.command(
-    name="leaderboard",
-    description="Returns the top 10 scoreboard for a specific movement map.",
-)
-async def self(interaction: discord.Interaction):
-    channel_name = interaction.channel.name
-    leaderboard = []
-    map_name = "INVALID"
-
-    match channel_name:
-        case "Mantle Jump Map":
-            map_name = "Mantle Jump Map"
-            leaderboard = read_leaderboard("mantlejumpmap")
-        case "Doorbounce Map":
-            map_name = "Doorbounce Map"
-            leaderboard = read_leaderboard("doorbouncemap")
-        case "First Map":
-            map_name = "First Map"
-            leaderboard = read_leaderboard("firstmap")
-        case "Gym Map":
-            map_name = "Gym Map"
-            leaderboard = read_leaderboard("gymmap")
-        case _:
-            await interaction.response.send_message(
-                f"**{channel_name}** doesn't have a leaderboard."
-            )
-            return
-
-    answer = f"**{map_name.upper()} LEADERBOARD**\n"
-
-    # If there's no one in the leaderboard
-    if len(leaderboard) <= 0:
-        answer += "```ansi\n"
-        answer += "[2;41m[2;30m[0m[2;41m[0m[2;41m[2;30m[2;37m[1;37m[4;37mNO SUBMISSIONS[0m[1;37m[1;41m[0m[2;37m[2;41m[0m[2;30m[2;41m[0m[2;41m[0m"
-        answer += "```"
-        await interaction.response.send_message(answer)
-        return
-
-    # If there's at least 1 player in the leaderboard
     else:
-        answer += table_constructor(leaderboard)
-        await interaction.response.send_message(answer)
+        with open("info.json", "r") as file:
+            data = json.load(file)
+            players = data.get("players", "X")
 
+        new_name = f"{players} Online players"
 
-@tree.command(name="hello", description="Greets the user.")
-async def self(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        f"Hello! I'm a bot made by loy_ and my purpose is to serve Treeree's server! For more info send /help"
-    )
+        if channel.name != new_name:
+            await channel.edit(name=f"{players} Online players")
 
-
-@tree.command(name="help", description="Returns info about this bot.")
-async def self(interaction: discord.Integration):
-    answer = f"**⭐ LIST OF COMMANDS ⭐**\n"
-    answer += "```ansi\n"
-    answer += """[1;2m[1;2m[1;2m[1;31m[1;37m[1;37m[1;40m/leaderboard[0m[1;37m[0m[1;37m[0m[1;31m[0m[0m[0m[0m:
-Using this command in the movement maps posts will return you a top 10 fastest runs of that specific map, if it has one.
-
-
-[2;37m[2;40m[0m[2;37m[0m[1;2m[1;2m[1;40m[1;37m[1;40m[1;37m[0m[1;37m[1;40m[0m[1;37m[1;40m[0m[1;40m[0m[0m[0m[2;42m[2;37m[2;40m[2;37m[1;37m[1;40m[1;37m/personal_best [1;31m[1;40m<nickname>[0m[1;31m[1;40m[0m[1;37m[1;40m:[0m[1;37m[1;40m[0m[1;37m[1;40m[0m[2;37m[2;40m[0m[2;37m[2;40m[0m[2;37m[2;42m
-[0m[2;42m[0mUsing this command in the movement maps posts will return you the top 10 fastest runs of that specific player in that specific map, if it has one."""
-    answer += "```\n"
-    answer += "⚠️ The bot can take up to 1 minute to update with new info, be patient!"
-    await interaction.response.send_message(answer)
-
-
-@tree.command(
-    name="personal_best",
-    description="Returns 10 quickest times of a specific player for a specific movement map.",
-)
-async def self(interaction: discord.Integration, player_name: str):
-    channel_name = interaction.channel.name
-    leaderboard = []
-    map_name = "INVALID"
-
-    if len(player_name) <= 0 or player_name == "":
-        await interaction.response.send_message(f"**Player nickname cannot be empty.**")
         return
 
-    match channel_name:
-        case "Mantle Jump Map":
-            map_name = "Mantle Jump Map"
-            leaderboard = read_personal_best(player_name, "mantlejumpmap")
-        case "Doorbounce Map":
-            map_name = "Doorbounce Map"
-            leaderboard = read_personal_best(player_name, "doorbouncemap")
-        case "First Map":
-            map_name = "First Map"
-            leaderboard = read_personal_best(player_name, "firstmap")
-        case "Gym Map":
-            map_name = "Gym Map"
-            leaderboard = read_personal_best(player_name, "gymmap")
-        case _:
-            await interaction.response.send_message(
-                f"**{channel_name}** doesn't have a leaderboard."
-            )
-            return
 
-    answer = f"**{map_name.upper()} PERSONAL BEST**\n"
-    # If there's no one in the leaderboard
-    if len(leaderboard) <= 0:
-        answer += "```ansi\n"
-        answer += f"[2;41m[2;30m[0m[2;41m[0m[2;41m[2;30m[2;37m[1;37m[4;37m{player_name} HAS NO SUBMISSIONS[0m[1;37m[1;41m[0m[2;37m[2;41m[0m[2;30m[2;41m[0m[2;41m[0m"
-        answer += "```"
-        await interaction.response.send_message(answer)
-        return
+@tasks.loop(seconds=60)
+async def log_runs(self):
+    channel = self.get_channel(NEW_RUNS_CHANNEL_ID)
 
-    # If there's at least 1 player in the leaderboard
+    if channel is None:
+        print("Channel **New Runs** not found.")
+
     else:
-        answer += table_constructor(leaderboard)
-        await interaction.response.send_message(answer)
+        player_amount = "0"
+        with open("info.json", "r") as file:
+            data = json.load(file)
+            now = datetime.now()
+            player_amount = data.get("players", "0")
+
+            for map_name, players in data.get("new_runs").items():
+                if players:
+                    answer = (
+                        f"**{map_name.upper()}** - {now.strftime('%Y-%m-%d %H:%M')}\n"
+                    )
+                    answer += utils.log_runs_table(data.get("new_runs").get(map_name))
+
+                    await channel.send(answer)
+        utils.reset_info_file(player_amount)
 
 
-client.run(TOKEN)
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+
+    # Ban spammers that uses @everyone and @here
+    if "@everyone" in message.content or "@here" in message.content:
+        if utils.is_spammer(message, MODERATOR_ROLES_ID):
+            try:
+                await message.guild.ban(
+                    message.author,
+                    reason="Sent `@everyone` or `@here`. Probably a hacked account.",
+                    delete_message_seconds=604800,
+                )
+
+                now = datetime.now()
+                print(
+                    f"{message.author} was banned for spamming. Date: {now.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+
+            except discord.Forbidden:
+                print("I tried to ban but I do not have permission to do it.")
+
+            except discord.HTTPException:
+                print("Banning failed.")
+
+    # Reply messages that contain twitter links with a better embed link
+    match_twitter = re.search(TWITTER_PATTERN, message.content)
+    match_x = re.search(X_PATTERN, message.content)
+
+    if match_twitter or match_x:
+        content = match_x.group(1) if match_x else match_twitter.group(1)
+
+        answer = f"Here's a better version of the link: https://vxtwitter.com/{content}"
+
+        await message.reply(answer)
+
+    await bot.process_commands(message)
+
+
+@bot.event
+async def on_ready():
+    print(f"Logged on as {bot.user}!")
+    await bot.sync_commands()
+    update_leaderboard.start(bot)
+    update_online_players.start(bot)
+    log_runs.start(bot)
+
+
+bot.run(TOKEN)
