@@ -1,11 +1,11 @@
+from dotenv import load_dotenv
 import sqlite3
 import os
-from dotenv import load_dotenv
 
 load_dotenv()
 DB_PATH = os.getenv("DB_PATH")
 
-allowed_table_names = ["mantlejumpmap", "firstmap", "gymmap", "doorbouncemap"]
+allowed_table_names = ["mantlejumpmap", "firstmap", "gymmap", "doorbouncemap", "ithurtsmap", "strafeitmap"]
 
 
 def insert_into_db(player_name, time_score, table_name):
@@ -31,7 +31,7 @@ def insert_into_db(player_name, time_score, table_name):
         )
         con.commit()
         con.close()
-    except:
+    except: # noqa: E722
         print("Error executing insert_into_db query...")
 
 
@@ -59,8 +59,8 @@ def read_leaderboard(table_name):
         cur.execute(query)
         results = cur.fetchall()
         con.close()
-    except:
-        print("Error executing read_leaderboard query...")
+    except Exception as e:
+        print(f"Error executing read_leaderboard query. Error: {e}")
         return []
 
     return results
@@ -85,12 +85,43 @@ def read_personal_best(player_name, table_name):
         cur.execute(query, (player_name,))
         results = cur.fetchall()
         con.close()
-    except:
-        print("Error executing read_personal_best query...")
+    except Exception as e:
+        print(f"Error executing read_personal_best query. Error: {e}")
         return []
 
     return results
 
+def read_personal_total(player_name, table_name):
+    if table_name not in allowed_table_names:
+        return []
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    query = f"""
+        WITH PlayerEntries AS (
+            SELECT player_name,
+            COUNT(*) AS entry_count
+            FROM {table_name}
+            GROUP BY player_name
+        ),
+        RankedPlayers AS (
+            SELECT player_name, entry_count,
+            RANK() OVER (ORDER BY entry_count DESC) AS player_rank
+            FROM PlayerEntries
+        )
+        SELECT player_rank, entry_count FROM RankedPlayers WHERE player_name = ?
+    """
+
+    try:
+        cur.execute(query, (player_name,))
+        results = cur.fetchone()
+        con.close()
+    except Exception as e:
+        print(f"Error executing read_personal_total query. Error: {e}")
+        return []
+
+    return results
 
 def timer_converter(timer):
     minutes, seconds = divmod(timer, 60)
@@ -120,7 +151,7 @@ def table_constructor(leaderboard):
     return table
 
 
-def delete_from_db(player, table_name, time=0):
+def delete_from_db(player, time, table_name):
     if table_name not in allowed_table_names:
         return
 
@@ -159,7 +190,9 @@ def change_nickname_in_db(old_name, new_name, table_name):
         with con:
             cur = con.cursor()
             cur.execute(query, (new_name, old_name))
+        
+        return True
 
     except sqlite3.Error as e:
         print(f"Error executing change_nickname_in_db query: {e}")
-        return
+        return False
